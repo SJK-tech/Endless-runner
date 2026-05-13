@@ -10,7 +10,7 @@ import kotlin.random.Random
 class GameView(context: Context) : SurfaceView(context), Runnable {
 
     private enum class GameState {
-        START, PLAYING, GAME_OVER
+        START, SETUP, PLAYING, GAME_OVER
     }
 
     private var thread: Thread? = null
@@ -36,6 +36,12 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         strokeWidth = 5f
         isAntiAlias = true
     }
+
+    private val selectedButtonPaint = Paint().apply {
+        color = Color.parseColor("#C084FC") // Lighter purple for selection
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
     
     private val bitmapPaint = Paint().apply {
         isFilterBitmap = false // Faster for pre-scaled bitmaps
@@ -43,7 +49,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     }
 
     private val overlayPaint = Paint().apply {
-        color = Color.argb(150, 0, 0, 0)
+        color = Color.argb(200, 0, 0, 0)
     }
 
     private val playerRect = RectF()
@@ -51,6 +57,14 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     private val tryAgainRect = RectF()
     private val menuRect = RectF()
     private val textBounds = Rect()
+
+    // Setup screen button rects
+    private val difficultyEasyRect = RectF()
+    private val difficultyMedRect = RectF()
+    private val difficultyHardRect = RectF()
+    private val gravityToggleRect = RectF()
+    private val startGameRect = RectF()
+    private val charSelectRects = Array(3) { RectF() }
 
     private val gravityZonePaint = Paint().apply {
         color = Color.CYAN
@@ -60,14 +74,19 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         pathEffect = DashPathEffect(floatArrayOf(20f, 10f), 0f)
     }
 
+    // Bitmaps
     private var run1: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.run1)
     private var run2: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.run2)
     private var jumpImg: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.jump)
     private var bg: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.background)
     private var floor: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.floor)
     private var logo: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.logo)
-
     private var flipImg: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.flip)
+    
+    // Character bitmaps storage
+    private class CharacterSprites(val run1: Bitmap, val run2: Bitmap, val jump: Bitmap)
+    private lateinit var characters: Array<CharacterSprites>
+
     private var obstacleBitmaps: Array<Bitmap> = arrayOf(
         BitmapFactory.decodeResource(resources, R.drawable.obstacle1),
         BitmapFactory.decodeResource(resources, R.drawable.obstacle2),
@@ -88,13 +107,18 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     private var playerX = 200f
     private var playerY = 0f
     private var velocity = 0f
-    private val gravity = 1.8f
+    private val gravity = 2.2f // Increased from 1.8f
     private var gravityDirection = 1 // 1 = normal, -1 = upside down
     private var jumpCount = 0
     private var score = 0
     private var highScore = 0
     private var gameSpeed = 15f
     private var isInitialized = false
+
+    // Setup Variables
+    private var selectedDifficulty = 1 // 0=Easy, 1=Medium, 2=Hard
+    private var selectedCharacter = 0 // 0 to 2
+    private var gravityEnabled = true
 
     private class Obstacle(var x: Float, var y: Float, val bitmap: Bitmap, val isGravityZone: Boolean = false, val isCeiling: Boolean = false)
     private val activeObstacles = mutableListOf<Obstacle>()
@@ -105,15 +129,50 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     init {
         highScore = sharedPreferences.getInt("highScore", 0)
         
-        run1 = Bitmap.createScaledBitmap(run1, playerSize.toInt(), playerSize.toInt(), false)
-        run2 = Bitmap.createScaledBitmap(run2, playerSize.toInt(), playerSize.toInt(), false)
-        jumpImg = Bitmap.createScaledBitmap(jumpImg, playerSize.toInt(), playerSize.toInt(), false)
+        loadAndScaleCharacters()
 
         obstacleBitmaps = obstacleBitmaps.map {
             Bitmap.createScaledBitmap(it, obstacleSize.toInt(), obstacleSize.toInt(), false)
         }.toTypedArray()
 
         flipImg = Bitmap.createScaledBitmap(flipImg, obstacleSize.toInt(), obstacleSize.toInt(), false)
+    }
+
+    private fun loadAndScaleCharacters() {
+        val size = playerSize.toInt()
+        
+        // Character 1 (Default)
+        val char1 = CharacterSprites(
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.run1), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.run2), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.jump), size, size, false)
+        )
+
+        // Character 2
+        val char2 = CharacterSprites(
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character2_left), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character2_right), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character2_jump), size, size, false)
+        )
+
+        // Character 3
+        val char3 = CharacterSprites(
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character3_left), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character3_right), size, size, false),
+            Bitmap.createScaledBitmap(BitmapFactory.decodeResource(resources, R.drawable.character3_jump), size, size, false)
+        )
+
+        characters = arrayOf(char1, char2, char3)
+        
+        // Initialize current sprites
+        updatePlayerSprites()
+    }
+
+    private fun updatePlayerSprites() {
+        val sprites = characters[selectedCharacter]
+        run1 = sprites.run1
+        run2 = sprites.run2
+        jumpImg = sprites.jump
     }
 
     private fun initGameDimensions() {
@@ -132,20 +191,43 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
             if (bgWidth < width) bgWidth = width // Stretch if too narrow
             bg = Bitmap.createScaledBitmap(bg, bgWidth, height, false)
 
-            // Scale logo - use 60% of width as requested
+            // Scale logo
             val logoScale = (width * 0.6f) / logo.width
             val logoWidth = (logo.width * logoScale).toInt()
             val logoHeight = (logo.height * logoScale).toInt()
             logo = Bitmap.createScaledBitmap(logo, logoWidth, logoHeight, false)
 
-            // Setup Game Over Buttons
-            val btnWidth = 400f
-            val btnHeight = 120f
+            // Setup UI Rects
             val centerX = width / 2f
             val centerY = height / 2f
+
+            // Game Over Buttons
+            val btnW = 400f
+            val btnH = 120f
+            tryAgainRect.set(centerX - btnW - 20f, centerY + 100f, centerX - 20f, centerY + 100f + btnH)
+            menuRect.set(centerX + 20f, centerY + 100f, centerX + btnW + 20f, centerY + 100f + btnH)
+
+            // Setup Screen Buttons
+            val setupBtnW = 280f
+            val setupBtnH = 100f
             
-            tryAgainRect.set(centerX - btnWidth - 20f, centerY + 100f, centerX - 20f, centerY + 100f + btnHeight)
-            menuRect.set(centerX + 20f, centerY + 100f, centerX + btnWidth + 20f, centerY + 100f + btnHeight)
+            // Difficulty row
+            val diffY = centerY - 150f
+            difficultyEasyRect.set(centerX - setupBtnW * 1.6f, diffY, centerX - setupBtnW * 0.6f, diffY + setupBtnH)
+            difficultyMedRect.set(centerX - setupBtnW * 0.5f, diffY, centerX + setupBtnW * 0.5f, diffY + setupBtnH)
+            difficultyHardRect.set(centerX + setupBtnW * 0.6f, diffY, centerX + setupBtnW * 1.6f, diffY + setupBtnH)
+
+            // Character row
+            val charY = centerY + 50f
+            val charIconSize = 140f
+            for (i in 0 until 3) {
+                val xOffset = (i - 1.0f) * (charIconSize + 60f)
+                charSelectRects[i].set(centerX + xOffset - charIconSize/2, charY, centerX + xOffset + charIconSize/2, charY + charIconSize)
+            }
+
+            // Gravity & Start
+            gravityToggleRect.set(centerX - 200f, centerY + 280f, centerX + 200f, centerY + 280f + 100f)
+            startGameRect.set(centerX - 250f, height - 180f, centerX + 250f, height - 180f + 120f)
 
             resetGame()
             isInitialized = true
@@ -158,7 +240,15 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         gravityDirection = 1
         jumpCount = 0
         score = 0
-        gameSpeed = 18f
+        
+        // Apply selected difficulty
+        gameSpeed = when(selectedDifficulty) {
+            0 -> 12f // Easy
+            1 -> 18f // Medium
+            else -> 24f // Hard
+        }
+        
+        updatePlayerSprites()
         activeObstacles.clear()
         nextSpawnDistance = 0f
         spawnObstacle()
@@ -167,7 +257,6 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     private fun spawnObstacle() {
         val surfaceOffset = (height * 0.15f) * 0.1f
         
-        // Randomly choose obstacle type: 0=GravityZone, 1-5=Ceiling, 6-9=Ground
         val spawnType = Random.nextInt(10)
         val y: Float
         val bitmap: Bitmap
@@ -175,24 +264,23 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         var isCeiling = false
 
         when {
-            spawnType < 1 -> { // 10% chance Gravity Zone (reduced from 20%)
+            spawnType < 1 && gravityEnabled -> { 
                 isGravity = true
                 bitmap = flipImg
                 y = (floorY / 2f)
             }
-            spawnType < 5 -> { // 40% chance Ceiling
+            spawnType < 5 -> { 
                 isCeiling = true
                 bitmap = obstacleBitmaps.random()
                 y = 0f
             }
-            else -> { // 50% chance Ground
+            else -> { 
                 bitmap = obstacleBitmaps.random()
                 y = (floorY + surfaceOffset) - obstacleSize
             }
         }
         
         activeObstacles.add(Obstacle(width.toFloat(), y, bitmap, isGravity, isCeiling))
-        // Reduced distance for more frequent spawning
         nextSpawnDistance = Random.nextFloat() * 400f + 400f
     }
 
@@ -243,33 +331,32 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
                 canvas.drawBitmap(floor, floorX + floor.width, floorY, bitmapPaint)
             }
 
-            // Draw Player
-            canvas.save()
-            if (gravityDirection == -1) {
-                // Flip player vertically
-                canvas.scale(1f, -1f, playerX + playerSize / 2f, playerY + playerSize / 2f)
-            }
-            val isGrounded = if (gravityDirection == 1) playerY >= groundLevel else playerY <= 0f
-            val currentBitmap = if (!isGrounded) jumpImg else (if (frame == 0) run1 else run2)
-            canvas.drawBitmap(currentBitmap, playerX, playerY, bitmapPaint)
-            canvas.restore()
-
-            // Draw Obstacles
-            for (obs in activeObstacles) {
+            if (gameState == GameState.PLAYING) {
+                // Draw Player
                 canvas.save()
-                if (obs.isCeiling) {
-                    // Flip ceiling obstacles vertically
-                    canvas.scale(1f, -1f, obs.x + obstacleSize / 2f, obs.y + obstacleSize / 2f)
+                if (gravityDirection == -1) {
+                    canvas.scale(1f, -1f, playerX + playerSize / 2f, playerY + playerSize / 2f)
                 }
-                
-                if (obs.isGravityZone) {
-                    // Draw glow effect for gravity zones
-                    gravityZonePaint.setShadowLayer(20f, 0f, 0f, Color.CYAN)
-                    canvas.drawRect(obs.x, obs.y, obs.x + obstacleSize, obs.y + obstacleSize, gravityZonePaint)
-                    gravityZonePaint.clearShadowLayer()
-                }
-                canvas.drawBitmap(obs.bitmap, obs.x, obs.y, bitmapPaint)
+                val isGrounded = if (gravityDirection == 1) playerY >= groundLevel else playerY <= 0f
+                val currentBitmap = if (!isGrounded) jumpImg else (if (frame == 0) run1 else run2)
+                canvas.drawBitmap(currentBitmap, playerX, playerY, bitmapPaint)
                 canvas.restore()
+
+                // Draw Obstacles
+                for (obs in activeObstacles) {
+                    canvas.save()
+                    if (obs.isCeiling) {
+                        canvas.scale(1f, -1f, obs.x + obstacleSize / 2f, obs.y + obstacleSize / 2f)
+                    }
+                    
+                    if (obs.isGravityZone && gravityEnabled) {
+                        gravityZonePaint.setShadowLayer(20f, 0f, 0f, Color.CYAN)
+                        canvas.drawRect(obs.x, obs.y, obs.x + obstacleSize, obs.y + obstacleSize, gravityZonePaint)
+                        gravityZonePaint.clearShadowLayer()
+                    }
+                    canvas.drawBitmap(obs.bitmap, obs.x, obs.y, bitmapPaint)
+                    canvas.restore()
+                }
             }
 
             drawUI(canvas)
@@ -281,14 +368,19 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     private fun update() {
         if (!isInitialized) return
 
-        // Background scrolling (Always scroll for visual effect)
+        // Background scrolling
         bgX -= (gameSpeed / 6f)
         if (bgX <= -bg.width) bgX = 0f
 
         if (gameState != GameState.PLAYING) return
 
         // Difficulty scaling
-        gameSpeed = 18f + (score / 5f)
+        val speedInc = when(selectedDifficulty) {
+            0 -> 10f // Slow
+            1 -> 5f  // Medium
+            else -> 3f // Fast
+        }
+        gameSpeed += (score / speedInc) * 0.01f // Very gradual increase
 
         // Physics
         velocity += gravity * gravityDirection
@@ -322,10 +414,9 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
             obstacleRect.set(obs.x + 35, obs.y + 35, obs.x + obstacleSize - 35, obs.y + obstacleSize - 10)
 
             if (RectF.intersects(playerRect, obstacleRect)) {
-                if (obs.isGravityZone) {
+                if (obs.isGravityZone && gravityEnabled) {
                     gravityDirection *= -1
                     activeObstacles.removeAt(i)
-                    // No score increment for hitting gravity zones, they are utility
                 } else {
                     endGame()
                     return
@@ -359,16 +450,66 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     }
 
     private fun drawUI(canvas: Canvas) {
-        textPaint.color = Color.BLACK
-        textPaint.textSize = 60f
-        canvas.drawText("Score: $score", 50f, 100f, textPaint)
-        canvas.drawText("Best: $highScore", 50f, 180f, textPaint)
-
-        if (gameState == GameState.START) {
-            drawMenu(canvas)
-        } else if (gameState == GameState.GAME_OVER) {
-            drawGameOver(canvas)
+        if (gameState == GameState.PLAYING || gameState == GameState.GAME_OVER) {
+            textPaint.color = Color.BLACK
+            textPaint.textSize = 60f
+            canvas.drawText("Score: $score", 50f, 100f, textPaint)
+            canvas.drawText("Best: $highScore", 50f, 180f, textPaint)
         }
+
+        when (gameState) {
+            GameState.START -> drawMenu(canvas)
+            GameState.SETUP -> drawSetup(canvas)
+            GameState.GAME_OVER -> drawGameOver(canvas)
+            else -> {}
+        }
+    }
+
+    private fun drawSetup(canvas: Canvas) {
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), overlayPaint)
+        
+        textPaint.color = Color.WHITE
+        textPaint.textSize = 80f
+        val title = "SETUP YOUR RUN"
+        textPaint.getTextBounds(title, 0, title.length, textBounds)
+        canvas.drawText(title, width/2f - textBounds.width()/2f, height * 0.15f, textPaint)
+
+        // Difficulty Label
+        textPaint.textSize = 45f
+        canvas.drawText("DIFFICULTY", width/2f - 120f, difficultyMedRect.top - 40f, textPaint)
+        
+        drawSetupButton(canvas, difficultyEasyRect, "EASY", selectedDifficulty == 0)
+        drawSetupButton(canvas, difficultyMedRect, "MED", selectedDifficulty == 1)
+        drawSetupButton(canvas, difficultyHardRect, "HARD", selectedDifficulty == 2)
+
+        // Character Label
+        canvas.drawText("CHARACTER", width/2f - 120f, charSelectRects[0].top - 40f, textPaint)
+        for (i in 0 until 3) {
+            val rect = charSelectRects[i]
+            val isSelected = selectedCharacter == i
+            canvas.drawRoundRect(rect, 15f, 15f, if(isSelected) selectedButtonPaint else buttonPaint)
+            canvas.drawRoundRect(rect, 15f, 15f, buttonStrokePaint)
+            
+            // Draw character preview
+            val sprite = characters[i].run1
+            canvas.drawBitmap(sprite, rect.centerX() - sprite.width/2f, rect.centerY() - sprite.height/2f, bitmapPaint)
+        }
+
+        // Gravity Toggle
+        val gravText = if(gravityEnabled) "GRAVITY: ON" else "GRAVITY: OFF"
+        drawSetupButton(canvas, gravityToggleRect, gravText, gravityEnabled)
+
+        // Start Game Button
+        drawButton(canvas, startGameRect, "START RUN!")
+    }
+
+    private fun drawSetupButton(canvas: Canvas, rect: RectF, text: String, isSelected: Boolean) {
+        canvas.drawRoundRect(rect, 20f, 20f, if(isSelected) selectedButtonPaint else buttonPaint)
+        canvas.drawRoundRect(rect, 20f, 20f, buttonStrokePaint)
+        textPaint.color = Color.WHITE
+        textPaint.textSize = 40f
+        textPaint.getTextBounds(text, 0, text.length, textBounds)
+        canvas.drawText(text, rect.centerX() - textBounds.width()/2f, rect.centerY() + textBounds.height()/2f, textPaint)
     }
 
     private fun drawGameOver(canvas: Canvas) {
@@ -385,80 +526,73 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         textPaint.getTextBounds(finalScoreMsg, 0, finalScoreMsg.length, textBounds)
         canvas.drawText(finalScoreMsg, width / 2f - textBounds.width() / 2f, height / 2f, textPaint)
 
-        // Draw Buttons
         drawButton(canvas, tryAgainRect, "RETRY")
         drawButton(canvas, menuRect, "MENU")
     }
 
     private fun drawButton(canvas: Canvas, rect: RectF, text: String) {
-
-        val gradient = LinearGradient(
-            rect.left, rect.top,
-            rect.left, rect.bottom,
-            Color.parseColor("#6A0DAD"),
-            Color.parseColor("#2E003E"),
-            Shader.TileMode.CLAMP
-        )
-
+        val gradient = LinearGradient(rect.left, rect.top, rect.left, rect.bottom,
+            Color.parseColor("#6A0DAD"), Color.parseColor("#2E003E"), Shader.TileMode.CLAMP)
         buttonPaint.shader = gradient
         canvas.drawRoundRect(rect, 25f, 25f, buttonPaint)
         buttonPaint.shader = null
-
         canvas.drawRoundRect(rect, 25f, 25f, buttonStrokePaint)
 
-        // glow text
         textPaint.setShadowLayer(10f, 0f, 0f, Color.MAGENTA)
         textPaint.color = Color.WHITE
         textPaint.textSize = 45f
-
         textPaint.getTextBounds(text, 0, text.length, textBounds)
-
-        canvas.drawText(
-            text,
-            rect.centerX() - textBounds.width() / 2f,
-            rect.centerY() + textBounds.height() / 2f,
-            textPaint
-        )
+        canvas.drawText(text, rect.centerX() - textBounds.width() / 2f, rect.centerY() + textBounds.height() / 2f, textPaint)
+        textPaint.clearShadowLayer()
     }
 
     private fun drawMenu(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), overlayPaint)
-        
-        // Draw Logo - position at 15% from top
         val logoY = height * 0.15f
         canvas.drawBitmap(logo, width / 2f - logo.width / 2f, logoY, bitmapPaint)
 
-        // Draw "TAP ANYWHERE TO START" hint
         textPaint.color = Color.WHITE
         textPaint.textSize = 25f
         val startText = "Tap anywhere to start"
         textPaint.getTextBounds(startText, 0, startText.length, textBounds)
-        canvas.drawText(
-            startText, 
-            width / 2f - textBounds.width() / 2f,
-            logoY + logo.height + 150f, 
-            textPaint
-        )
+        canvas.drawText(startText, width / 2f - textBounds.width() / 2f, logoY + logo.height + 150f, textPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         if (event?.action == MotionEvent.ACTION_DOWN) {
+            val x = event.x
+            val y = event.y
+
             when (gameState) {
-                GameState.START -> {
-                    gameState = GameState.PLAYING
+                GameState.START -> gameState = GameState.SETUP
+                GameState.SETUP -> {
+                    if (difficultyEasyRect.contains(x, y)) selectedDifficulty = 0
+                    else if (difficultyMedRect.contains(x, y)) selectedDifficulty = 1
+                    else if (difficultyHardRect.contains(x, y)) selectedDifficulty = 2
+                    else if (gravityToggleRect.contains(x, y)) gravityEnabled = !gravityEnabled
+                    else if (startGameRect.contains(x, y)) {
+                        resetGame()
+                        gameState = GameState.PLAYING
+                    } else {
+                        for (i in 0 until 3) {
+                            if (charSelectRects[i].contains(x, y)) {
+                                selectedCharacter = i
+                                break
+                            }
+                        }
+                    }
                 }
                 GameState.PLAYING -> {
-                    if (jumpCount < 2) {
+                    if (jumpCount < 3) {
                         velocity = -35f * gravityDirection
                         jumpCount++
                     }
                 }
                 GameState.GAME_OVER -> {
-                    if (tryAgainRect.contains(event.x, event.y)) {
+                    if (tryAgainRect.contains(x, y)) {
                         resetGame()
                         gameState = GameState.PLAYING
-                    } else if (menuRect.contains(event.x, event.y)) {
-                        resetGame()
+                    } else if (menuRect.contains(x, y)) {
                         gameState = GameState.START
                     }
                 }
