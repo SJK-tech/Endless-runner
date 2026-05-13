@@ -241,11 +241,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         jumpCount = 0
         score = 0
         
-        // Apply selected difficulty
+        // Apply selected difficulty (Starting speeds reduced)
         gameSpeed = when(selectedDifficulty) {
-            0 -> 12f // Easy
-            1 -> 18f // Medium
-            else -> 24f // Hard
+            0 -> 10f // Easy (Slower start)
+            1 -> 15f // Medium
+            else -> 20f // Hard
         }
         
         updatePlayerSprites()
@@ -281,7 +281,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         }
         
         activeObstacles.add(Obstacle(width.toFloat(), y, bitmap, isGravity, isCeiling))
-        nextSpawnDistance = Random.nextFloat() * 400f + 400f
+        // Increased distance between obstacles to reduce spawn rate
+        nextSpawnDistance = Random.nextFloat() * 600f + 800f
     }
 
     override fun run() {
@@ -374,13 +375,13 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
 
         if (gameState != GameState.PLAYING) return
 
-        // Difficulty scaling
-        val speedInc = when(selectedDifficulty) {
-            0 -> 10f // Slow
-            1 -> 5f  // Medium
-            else -> 3f // Fast
+        // Difficulty scaling - Much more gradual speed increase
+        val speedIncrement = when(selectedDifficulty) {
+            0 -> 0.0005f // Easy: Very slow growth
+            1 -> 0.0015f // Medium: Moderate growth
+            else -> 0.003f // Hard: Faster growth
         }
-        gameSpeed += (score / speedInc) * 0.01f // Very gradual increase
+        gameSpeed += speedIncrement
 
         // Physics
         velocity += gravity * gravityDirection
