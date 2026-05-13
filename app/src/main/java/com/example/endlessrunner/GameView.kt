@@ -66,6 +66,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     private var bg: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.background)
     private var floor: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.floor)
     private var logo: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.logo)
+
+    private var flipImg: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.flip)
     private var obstacleBitmaps: Array<Bitmap> = arrayOf(
         BitmapFactory.decodeResource(resources, R.drawable.obstacle1),
         BitmapFactory.decodeResource(resources, R.drawable.obstacle2),
@@ -110,6 +112,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
         obstacleBitmaps = obstacleBitmaps.map {
             Bitmap.createScaledBitmap(it, obstacleSize.toInt(), obstacleSize.toInt(), false)
         }.toTypedArray()
+
+        flipImg = Bitmap.createScaledBitmap(flipImg, obstacleSize.toInt(), obstacleSize.toInt(), false)
     }
 
     private fun initGameDimensions() {
@@ -161,25 +165,28 @@ class GameView(context: Context) : SurfaceView(context), Runnable {
     }
 
     private fun spawnObstacle() {
-        val bitmap = obstacleBitmaps.random()
         val surfaceOffset = (height * 0.15f) * 0.1f
         
-        // Randomly choose obstacle type: 0=Ground, 1=Ceiling, 2=GravityZone
+        // Randomly choose obstacle type: 0=GravityZone, 1-5=Ceiling, 6-9=Ground
         val spawnType = Random.nextInt(10)
         val y: Float
+        val bitmap: Bitmap
         var isGravity = false
         var isCeiling = false
 
         when {
-            spawnType < 2 -> { // 20% chance Gravity Zone
+            spawnType < 1 -> { // 10% chance Gravity Zone (reduced from 20%)
                 isGravity = true
+                bitmap = flipImg
                 y = (floorY / 2f)
             }
-            spawnType < 6 -> { // 40% chance Ceiling
+            spawnType < 5 -> { // 40% chance Ceiling
                 isCeiling = true
+                bitmap = obstacleBitmaps.random()
                 y = 0f
             }
-            else -> { // 40% chance Ground
+            else -> { // 50% chance Ground
+                bitmap = obstacleBitmaps.random()
                 y = (floorY + surfaceOffset) - obstacleSize
             }
         }
