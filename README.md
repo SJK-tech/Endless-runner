@@ -127,9 +127,9 @@ git clone https://github.com/SJK-tech/Endless-runner.git
 
 Gameplay
 
-```
-demo.gif
-```
+<p align="center">
+  <img src="demo.gif" width="700" alt="Gameplay Demo">
+</p>
 
 ---
 
