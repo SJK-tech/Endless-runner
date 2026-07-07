@@ -20,15 +20,17 @@ A 2D endless runner game developed in **Android Studio using Kotlin**. The game 
 
 ---
 
-## 📱 Screenshots
+## 📸 Screenshots
 
-```
-screenshots/
-├── menu.png
-├── setup.png
-├── gameplay.png
-└── gameover.png
-```
+<p align="center">
+  <img src="screenshots/menu.jpeg" width="45%">
+  <img src="screenshots/setup.jpeg" width="45%">
+</p>
+
+<p align="center">
+  <img src="screenshots/gameplay.jpeg" width="45%">
+  <img src="screenshots/gameover.jpeg" width="45%">
+</p>
 
 ---
 
